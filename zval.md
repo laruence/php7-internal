@@ -33,10 +33,13 @@ struct _zval_struct {
 
 类似的, 还有is_ref, 这个值表示了PHP中的一个类型是否是引用, 这里我们可以看到是不是引用是一个标志位.
 
-这就是PHP5时代的zval, 在dmitry和我做PHP5的opcache JIT的时候, 我们意识到这个结构体的很多问题. 而PHPNG项目就是从改写这个结构体而开始的.
+这就是PHP5时代的zval, 在2013年我们做PHP5的opcache JIT的时候, 因为JIT在实际项目中表现不佳, 我们转而意识到这个结构体的很多问题. 而PHPNG项目就是从改写这个结构体而开始的.
 
 #####存在的问题
-首先这个结构体的大小是(在64位系统)24个字节, 我们仔细看这个zval.value联合体, 其中zend_object_value是最大的长板, 它导致整个value需要16个字节, 这个应该是很容易可以优化掉的, 因为毕竟IS_OBJECT也不是最最常用的类型.
+
+PHP5的zval定义是随着Zend Engine 2诞生的, 随着时间的推移, 当时设计的局限性也越来越明显:
+
+首先这个结构体的大小是(在64位系统)24个字节, 我们仔细看这个zval.value联合体, 其中zend_object_value是最大的长板, 它导致整个value需要16个字节, 这个应该是很容易可以优化掉的, 比如把它挪出来, 用个指针代替,因为毕竟IS_OBJECT也不是最最常用的类型.
 
 第二, 这个结构体的每一个字段都有明确的含义定义, 没有预留任何的自定义字段, 导致在PHP5时代做很多的优化的时候, 需要存储一些和zval相关的信息的时候, 不得不采用其他结构体映射, 或者外部包装后打补丁的方式来扩充zval, 比如5.3的时候新引入的GC, 它不得采用如下的比较hack的做法:
 ````c
@@ -101,7 +104,9 @@ EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
 
 这一切都是因为Zend引擎最初设计的时候, 并没有考虑到后来的对象. 一个良好的设计, 一旦有了意外, 就会导致整个结构变得复杂, 维护性降低, 这是一个很好的例子.
 
-第四, 这个是关于引用的, PHP5的时代, 我们采用写时分离, 但是结合到引用这里就有了一个比较让人郁闷的例子:
+第四, 我们知道PHP中, 大量的计算都是面向字符串的, 然而因为引用计数是作用在zval的, 那么就会导致如果要拷贝一个字符串类型的zval, 我们别无他法只能复制这个字符串. 当我们把一个zval的字符串作为key添加到一个数组里的时候, 我们别无他法只能复制这个字符串. 虽然在PHP5.4的时候, 我们引入了INTERNED STRING, 但是还是不能根本解决这个问题.
+
+第五, 这个是关于引用的, PHP5的时代, 我们采用写时分离, 但是结合到引用这里就有了一个比较让人郁闷的例子:
 
 ````php
 <?php
@@ -136,7 +141,7 @@ while($i++ < 100) {
 
 printf("Used %sS\n", microtime(true) - $start);
 
-$b = &$array;
+$b = &$array; //注意这里, 假设我不小心把这个Array引用给了一个变量
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
@@ -152,9 +157,9 @@ $ php-5.6/sapi/cli/php /tmp/1.php
 Used 0.00045204162597656S
 Used 4.2051479816437S
 ````
-相差1万倍
+相差1万倍之多. 这就造成, 如果在一大段代码中, 我不小心把一个变量变成了引用(比如foreach as &$v), 那么就有可能触发到这个问题, 造成严重的性能问题, 然而却又很难排查.
 
-第五, 也是最重要的一个, 我们习惯了在PHP5的时代调用MAKE_STD_ZVAL在堆内存上分配一个zval, 然后对他进行操作, 最后呢通过RETURN_ZVAL把这个zval的值"copy"给return_value, 然后又销毁了这个zval, 比如pathinfo这个函数:
+第六, 也是最重要的一个, 为什么说它重要呢? 因为这点促成了很大的性能提升, 我们习惯了在PHP5的时代调用MAKE_STD_ZVAL在堆内存上分配一个zval, 然后对他进行操作, 最后呢通过RETURN_ZVAL把这个zval的值"copy"给return_value, 然后又销毁了这个zval, 比如pathinfo这个函数:
 ````c
 PHP_FUNCTION(pathinfo)
 {
@@ -170,8 +175,56 @@ PHP_FUNCTION(pathinfo)
 }
 ````
 
-这个tmp变量, 完全是一个临时变量的作用, 我们又何必在堆内存分配它呢?
+这个tmp变量, 完全是一个临时变量的作用, 我们又何必在堆内存分配它呢? MAKE_STD_ZVAL/ALLOC_ZVAL在PHP5的时候, 到处都有, 是一个非常常见的用法, 如果我们能把这个变量用栈分配, 那无论是内存分配, 还是缓存友好, 都是非常有利的
 
 还有很多, 我就不一一详细列举了, 但是我相信你们也有了和我们当时一样的想法, zval必须得改改了, 对吧? 
 
-上章就到这里, 下章我来介绍PHP7的zval, 我们来看看它是如何解决这些提到的, 以及没提到的问题的.
+####PHP7
+
+到了PHP7中, zval变成了如下的结构, 要说明的是, 这个是现在的结构, 已经和PHPNG时候有了一些不同了, 因为我们新增加了一些解释 (联合体的字段), 但是总体大小, 结构, 是和PHPNG的时候一致的:
+````c
+struct _zval_struct {
+	union {
+		zend_long         lval;             /* long value */
+		double            dval;             /* double value */
+		zend_refcounted  *counted;
+		zend_string      *str;
+		zend_array       *arr;
+		zend_object      *obj;
+		zend_resource    *res;
+		zend_reference   *ref;
+		zend_ast_ref     *ast;
+		zval             *zv;
+		void             *ptr;
+		zend_class_entry *ce;
+		zend_function    *func;
+		struct {
+			uint32_t w1;
+			uint32_t w2;
+		} ww;
+	} value;
+    union {
+        struct {
+            ZEND_ENDIAN_LOHI_4(
+                zend_uchar    type,         /* active type */
+                zend_uchar    type_flags,
+                zend_uchar    const_flags,
+                zend_uchar    reserved)     /* call info for EX(This) */
+        } v;
+        uint32_t type_info;
+    } u1;
+    union {
+        uint32_t     var_flags;
+        uint32_t     next;                 /* hash collision chain */
+        uint32_t     cache_slot;           /* literal cache slot */
+        uint32_t     lineno;               /* line number (for ast nodes) */
+        uint32_t     num_args;             /* arguments number for EX(This) */
+        uint32_t     fe_pos;               /* foreach position */
+        uint32_t     fe_iter_idx;          /* foreach iterator index */
+    } u2;
+};
+````
+
+虽然看起来变得好大, 但其实你仔细看, 全部都是联合体, 这个新的zval在64位环境下,现在只需要16个字节(2个指针size), 它主要分为俩个部分, value和扩充字段, 而扩充字段又分为u1和u2俩个部分, 其中u1是type info,  u2是各种辅助字段.
+
+(开会去了, 待续吧)
