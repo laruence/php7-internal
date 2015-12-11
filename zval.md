@@ -100,7 +100,7 @@ typedef struct _zend_object_store_bucket {
 
 EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
 
-经过漫长的多次内存读取, 才能获取到真正的objec对象本身. 效率可想而知.
+经过漫长的多次内存读取, 才能获取到真正的object对象本身. 效率可想而知.
 
 这一切都是因为Zend引擎最初设计的时候, 并没有考虑到后来的对象. 一个良好的设计, 一旦有了意外, 就会导致整个结构变得复杂, 维护性降低, 这是一个很好的例子.
 
@@ -138,14 +138,13 @@ $start = microtime(true);
 while($i++ < 100) {
     array_count($array);
 }
-
 printf("Used %sS\n", microtime(true) - $start);
 
 $b = &$array; //注意这里, 假设我不小心把这个Array引用给了一个变量
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    array_count($array);
+    array_count($b);
 }
 printf("Used %sS\n", microtime(true) - $start);
 ?>
