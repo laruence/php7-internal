@@ -116,7 +116,7 @@ EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
     $b = &$array;
 
     function array_count($array) {
-        return count($b);
+        return count($array);
     }
 
     array_count($b);
