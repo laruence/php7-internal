@@ -125,13 +125,13 @@ EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
 $array = range(1, 100000);
 
 function array_count($array) {
-    return count($b);
+    return count($array);
 }
 
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    array_count($b);
+    array_count($array);
 }
 
 printf("Used %sS\n", microtime(true) - $start);
