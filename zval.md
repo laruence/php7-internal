@@ -181,6 +181,7 @@ PHP_FUNCTION(pathinfo)
 
 ####PHP7
 
+#####现在的zval
 到了PHP7中, zval变成了如下的结构, 要说明的是, 这个是现在的结构, 已经和PHPNG时候有了一些不同了, 因为我们新增加了一些解释 (联合体的字段), 但是总体大小, 结构, 是和PHPNG的时候一致的:
 ````c
 struct _zval_struct {
@@ -227,4 +228,115 @@ struct _zval_struct {
 
 虽然看起来变得好大, 但其实你仔细看, 全部都是联合体, 这个新的zval在64位环境下,现在只需要16个字节(2个指针size), 它主要分为俩个部分, value和扩充字段, 而扩充字段又分为u1和u2俩个部分, 其中u1是type info,  u2是各种辅助字段.
 
-(开会去了, 待续吧)
+
+其中value部分, 是一个size_t大小(一个指针大小), 可以保存一个指针, 或者一个long, 或者一个double.
+
+而type info部分则保存了这个zval的类型. 扩充辅助字段则会在多个其他地方使用, 比如next, 就用在取代Hashtable中原来的拉链指针, 这部分会在以后介绍HashTable的时候再来详解.
+
+
+#####类型
+
+PHP7中的zval的类型做了比较大的调整, 总体来说有如下17种类型:
+````c
+/* regular data types */
+#define IS_UNDEF                    0
+#define IS_NULL                     1
+#define IS_FALSE                    2
+#define IS_TRUE                     3
+#define IS_LONG                     4
+#define IS_DOUBLE                   5
+#define IS_STRING                   6
+#define IS_ARRAY                    7
+#define IS_OBJECT                   8
+#define IS_RESOURCE                 9
+#define IS_REFERENCE                10
+
+/* constant expressions */
+#define IS_CONSTANT                 11
+#define IS_CONSTANT_AST             12
+
+/* fake types */
+#define _IS_BOOL                    13
+#define IS_CALLABLE                 14
+
+/* internal types */
+#define IS_INDIRECT                 15
+#define IS_PTR                      17
+````
+
+其中PHP5的时候的IS_BOOL类型, 现在拆分成了IS_FALSE和IS_TRUE俩种类型. 而原来的引用是一个标志位, 现在的引用是一种新的类型.
+
+对于IS_INDIRECT和IS_PTR来说, 这俩个类型是用在内部的保留类型, 用户不会感知到, 这部分会在后续介绍HashTable的时候也一并介绍.
+
+从PHP7开始, 对于在zval的value字段中能保存下的值, 就不再对他们进行引用计数了, 而是在拷贝的时候直接赋值, 这样就省掉了大量的引用计数相关的操作, 这部分类型有:
+````
+IS_LONG
+IS_DOUBLE
+````
+当然对于那种根本没有值, 只有类型的类型, 也不需要引用计数了:
+````
+IS_NULL
+IS_FALSE
+IS_TRUE
+````
+
+而对于复杂类型, 一个size_t保存不下的, 那么我们就用value来保存一个指针, 这个指针指向这个具体的值, 引用计数也随之作用于这个值上, 而不在是作用于zval上了. 以IS_ARRAY为例:
+
+````c
+struct _zend_array {
+    zend_refcounted_h gc;
+    union {
+        struct {
+            ZEND_ENDIAN_LOHI_4(
+                zend_uchar    flags,
+                zend_uchar    nApplyCount,
+                zend_uchar    nIteratorsCount,
+                zend_uchar    reserve)
+        } v;
+        uint32_t flags;
+    } u;
+    uint32_t          nTableMask;
+    Bucket           *arData;
+    uint32_t          nNumUsed;
+    uint32_t          nNumOfElements;
+    uint32_t          nTableSize;
+    uint32_t          nInternalPointer;
+    zend_long         nNextFreeElement;
+    dtor_func_t       pDestructor;
+};
+````
+
+zval.value.arr将指向上面的这样的一个结构体, 由它实际保存一个数组, 引用计数部分保存在zend_refcounted_h结构中:
+````c
+typedef struct _zend_refcounted_h {
+    uint32_t         refcount;          /* reference counter 32-bit */
+    union {
+        struct {
+            ZEND_ENDIAN_LOHI_3(
+                zend_uchar    type,
+                zend_uchar    flags,    /* used for strings & objects */
+                uint16_t      gc_info)  /* keeps GC root number (or 0) and color */
+        } v;
+        uint32_t type_info;
+    } u;
+} zend_refcounted_h;
+````
+
+所有的复杂类型的定义, 开始的时候都是zend_refcounted_h结构, 这个结构里除了引用计数以外, 还有GC相关的结构. 从而在做GC回收的时候, GC不需要关心具体类型是什么, 所有的它都可以当做zend_refcounted*结构来处理.
+
+另外有一个需要说明的就是大家可能会好奇的ZEND_ENDIAN_LOHI_4宏, 这个宏的作用是简化赋值, 它会保证在大端或者小端的机器上, 它定义的字段都按照一样顺序排列存储, 从而我们在赋值的时候, 不需要对它的字段分别赋值, 而是可以统一赋值, 比如对于上面的array结构为例, 就可以通过:
+````c
+arr1.u.flags = arr2.u.flags;
+````
+一次完成相当于如下的赋值序列:
+````c
+arr1.u.v.flags				= arr2.u.v.flags;
+arr1.u.v.nApplyCount 		= arr2.u.v.nApplyCount;
+arr1.u.v.nIteratorsCount	= arr2.u.v.nIteratorsCount;
+arr1.u.v.reserve 			= arr2.u.v.reserve;
+````
+
+还有一个可能会问题是, 为什么不把type类型放到zval类型的前面, 因为我们知道当我们去用一个zval的时候, 首先第一点肯定是先去获取它的类型. 这里的一个原因是, 一个是俩者差别不大, 另外就是考虑到如果以后JIT的话, zval的类型如果能够通过类型推导获得, 就根本没有必要去读取它的type值了.
+
+#####标志位
+(待续)
