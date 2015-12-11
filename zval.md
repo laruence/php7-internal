@@ -41,7 +41,7 @@ PHP5的zval定义是随着Zend Engine 2诞生的, 随着时间的推移, 当时�
 
 首先这个结构体的大小是(在64位系统)24个字节, 我们仔细看这个zval.value联合体, 其中zend_object_value是最大的长板, 它导致整个value需要16个字节, 这个应该是很容易可以优化掉的, 比如把它挪出来, 用个指针代替,因为毕竟IS_OBJECT也不是最最常用的类型.
 
-第二, 这个结构体的每一个字段都有明确的含义定义, 没有预留任何的自定义字段, 导致在PHP5时代做很多的优化的时候, 需要存储一些和zval相关的信息的时候, 不得不采用其他结构体映射, 或者外部包装后打补丁的方式来扩充zval, 比如5.3的时候新引入的GC, 它不得采用如下的比较hack的做法:
+第二, 这个结构体的每一个字段都有明确的含义定义, 没有预留任何的自定义字段, 导致在PHP5时代做很多的优化的时候, 需要存储一些和zval相关的信息的时候, 不得不采用其他结构体映射, 或者外部包装后打补丁的方式来扩充zval, 比如5.3的时候新引入专门解决循环引用的GC, 它不得采用如下的比较hack的做法:
 ````c
 /* The following macroses override macroses from zend_alloc.h */
 #undef  ALLOC_ZVAL
@@ -71,8 +71,6 @@ Z_STRVAL_PP(ppzval) = erealloc(Z_STRVAL_PP(ppzval), Z_STRLEN_PP(ppzval) + 1 + PH
 PHP_TAINT_MARK(*ppzval, PHP_TAINT_MAGIC_POSSIBLE);
 ````
 就是把字符串的长度扩充一个int, 然后用magic number做标记写到后面去, 这样的做法安全性和稳定性在技术上都是没有保障的
-
-还比如, PHP中大量的结构体都是基于Hashtable实现的, 增删改查Hashtable的操作占据了大量的CPU时间, 而字符串要查找首先要求它的Hash值, 理论上我们完全可以把一个字符串的Hash值计算好以后, 就存下来, 避免再次计算等等
 
 第三, PHP的zval大部分都是按值传递, 写时拷贝的值, 但是有俩个例外, 就是对象和资源, 他们永远都是按引用传递, 这样就造成一个问题, 对象和资源在除了zval中的引用计数以外, 还需要一个全局的引用计数, 这样才能保证内存可以回收. 所以在PHP5的时代, 以对象为例, 它有俩套引用计数, 一个是zval中的, 另外一个是obj自身的计数:
 ````c
@@ -106,20 +104,20 @@ EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
 
 第四, 我们知道PHP中, 大量的计算都是面向字符串的, 然而因为引用计数是作用在zval的, 那么就会导致如果要拷贝一个字符串类型的zval, 我们别无他法只能复制这个字符串. 当我们把一个zval的字符串作为key添加到一个数组里的时候, 我们别无他法只能复制这个字符串. 虽然在PHP5.4的时候, 我们引入了INTERNED STRING, 但是还是不能根本解决这个问题.
 
-第五, 这个是关于引用的, PHP5的时代, 我们采用写时分离, 但是结合到引用这里就有了一个比较让人郁闷的例子:
+还比如, PHP中大量的结构体都是基于Hashtable实现的, 增删改查Hashtable的操作占据了大量的CPU时间, 而字符串要查找首先要求它的Hash值, 理论上我们完全可以把一个字符串的Hash值计算好以后, 就存下来, 避免再次计算等等
+
+第五, 这个是关于引用的, PHP5的时代, 我们采用写时分离, 但是结合到引用这里就有了一个经典的性能问题:
 
 ````php
 <?php
+
+    function dummy($array) {}
 
     $array = range(1, 100000);
 
     $b = &$array;
 
-    function array_count($array) {
-        return count($array);
-    }
-
-    array_count($b);
+    dummy($b);
 ?>
 ````
 
@@ -129,14 +127,12 @@ EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
 <?php
 $array = range(1, 100000);
 
-function array_count($array) {
-    return count($array);
-}
+function dummy($array) {}
 
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    array_count($array);
+    dummy($array);
 }
 
 printf("Used %sS\n", microtime(true) - $start);
@@ -145,7 +141,7 @@ $b = &$array; //注意这里, 假设我不小心把这个Array引用给了一个
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    array_count($array);
+    dummy($array);
 }
 printf("Used %sS\n", microtime(true) - $start);
 ?>
