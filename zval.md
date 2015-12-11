@@ -145,7 +145,7 @@ $b = &$array; //注意这里, 假设我不小心把这个Array引用给了一个
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    array_count($b);
+    array_count($array);
 }
 printf("Used %sS\n", microtime(true) - $start);
 ?>
