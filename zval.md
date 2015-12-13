@@ -257,7 +257,7 @@ PHP7中的zval的类型做了比较大的调整, 总体来说有如下17种类�
 
 /* internal types */
 #define IS_INDIRECT                 15
-#define IS_PTR                      17
+#define IS_PTR                      16
 ````
 
 其中PHP5的时候的IS_BOOL类型, 现在拆分成了IS_FALSE和IS_TRUE俩种类型. 而原来的引用是一个标志位, 现在的引用是一种新的类型.
