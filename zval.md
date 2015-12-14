@@ -335,4 +335,76 @@ arr1.u.v.reserve 			= arr2.u.v.reserve;
 还有一个大家可能会问到的问题是, 为什么不把type类型放到zval类型的前面, 因为我们知道当我们去用一个zval的时候, 首先第一点肯定是先去获取它的类型. 这里的一个原因是, 一个是俩者差别不大, 另外就是考虑到如果以后JIT的话, zval的类型如果能够通过类型推导获得, 就根本没有必要去读取它的type值了.
 
 #####标志位
-(待续)
+
+除了数据类型以外， 以前的经验也告诉我们， 一个数据除了它的类型以外， 还应该有很多其他的属性， 比如对于INTERNED STRING， 在5.4的版本中我们是通过预先申请一块内存， 然后再这个内存中分配字符串， 最后用指针地址来比较， 如果一个字符串是属于INTERNED STRING的内存范围内， 就认为它是INTERNED STRING. 这样做的缺点显而易见， 就是当内存不够的时候， 我们就没有办法分配INTERNED STRING了， 另外也非常丑陋， 所以如果一个字符串能有一些属性定义则这个实现就可以变得很优雅.
+
+还有， 比如现在我们对于IS_LONG, IS_TRUE等类型不再进行引用计数了， 那么当我们拿到一个zval的时候如何判断它需要不需要引用计数呢？ 想当然的我们可能会说用:
+````c
+if (Z_TYPE_P(zv) >= IS_STRING) {
+  //需要引用计数
+}
+````
+
+但是你忘了， 还有INTERNED STRING的存在啊， 所以你也许要这么写了：
+````c
+if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))) {
+  //需要引用计数
+}
+````
+
+是不是已经让你感觉到有点不对劲了? 嗯，别急， 还有呢， 我们还在5.6的时候引入了常量数组， 这个数组呢会存储在Opcache的共享内存中， 它也不需要引用计数：  
+
+````c
+if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv)) && (Z_TYPE_P(zv) != IS_ARRAY || !Z_IS_IMMUTABLE(Z_ARRVAL(zv)))) {
+ //需要引用计数
+}
+````
+
+这简直太丑陋了， 绝对不能这么检查啊，所以我们引入了一个标志位， 叫做IS_TYPE_REFCOUNTED, 它会保存在zval.u1.v.type_flags中， 我们对于需要引用计数的类型就赋予这个标志， 所以上面的判断就可以变得很优雅：
+````c
+if (!(Z_TYPE_FLAGS(zv) & IS_TYPE_REFCOUNTED)) {
+}
+````
+
+而对于INTERNED STRING来说， 这个IS_STR_INTERNED标志位应该是作用于字符串本身而不是zval的.
+ 
+那么类似这样的标志位一共有多少呢？作用于zval的有：
+````c
+IS_TYPE_CONSTANT            //是常量类型
+IS_TYPE_IMMUTABLE           //不可变的类型， 比如存在共享内存的数组
+IS_TYPE_REFCOUNTED          //需要引用计数的类型
+IS_TYPE_COLLECTABLE         //可能包含循环引用的类型(IS_ARRAY, IS_OBJECT)
+IS_TYPE_COPYABLE            //可被复制的类型， 还记得我之前讲的对象和资源的例外么？ 对象和资源就不是
+IS_TYPE_SYMBOLTABLE         //zval保存的是一个符号表， 这个常量在我之前做了一个调整以后没用了， 但是还保留着兼容， 下个版本会去掉
+````
+作用于字符串的有:
+````c
+IS_STR_PERSISTENT	        //是malloc分配内存的字符串
+IS_STR_INTERNED             //INTERNED STRING
+IS_STR_PERMANENT            //不可变的字符串， 用作哨兵作用
+IS_STR_CONSTANT             //代表常量的字符串
+IS_STR_CONSTANT_UNQUALIFIED //带有可能命名空间的常量字符串
+````
+作用于数组的有:
+````c
+#define IS_ARRAY_IMMUTABLE  //同IS_TYPE_IMMUTABLE
+````
+作用于对象的有：
+````c
+IS_OBJ_APPLY_COUNT          //递归保护
+IS_OBJ_DESTRUCTOR_CALLED    //析构函数已经调用
+IS_OBJ_FREE_CALLED          //清理函数已经调用
+IS_OBJ_USE_GUARDS           //魔术方法递归保护
+IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
+````
+有了这些预留的标志位， 我们就会很方便的做一些以前不好做的事情， 就比如我自己的taint扩展， 现在把一个字符串标记为污染的字符串就会变得无比简单：
+````c
+/* it's important that make sure 
+ * this value is not used by Zend or
+ * any other extension agianst string */
+#define IS_STR_TAINT_POSSIBLE    (1<<7)
+#define TAINT_MARK(str)     (GC_FLAGS((str)) |= IS_STR_TAINT_POSSIBLE)
+````
+这个标记就会一直随着这个字符串的生存而存在的， 省掉了我之前的很多tricky的做法.
+
+待续...
