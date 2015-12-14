@@ -360,12 +360,14 @@ if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))) {
 是不是已经让你感觉到有点不对劲了? 嗯，别急， 还有呢， 我们还在5.6的时候引入了常量数组， 这个数组呢会存储在Opcache的共享内存中， 它也不需要引用计数：  
 
 ````c
-if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv)) && (Z_TYPE_P(zv) != IS_ARRAY || !Z_IS_IMMUTABLE(Z_ARRVAL(zv)))) {
+if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))
+    && (Z_TYPE_P(zv) != IS_ARRAY || !Z_IS_IMMUTABLE(Z_ARRVAL(zv)))) {
  //需要引用计数
 }
 ````
+你是不是也觉得这简直太丑陋了， 简直不能忍受这样墨迹的代码， 对吧？
 
-这简直太丑陋了， 绝对不能这么检查啊，所以我们引入了一个标志位， 叫做IS_TYPE_REFCOUNTED, 它会保存在zval.u1.v.type_flags中， 我们对于需要引用计数的类型就赋予这个标志， 所以上面的判断就可以变得很优雅：
+是的，我们早想到了，回头看之前的zval定义， 注意到type_flags了么? 我们引入了一个标志位， 叫做IS_TYPE_REFCOUNTED, 它会保存在zval.u1.v.type_flags中， 我们对于需要引用计数的类型就赋予这个标志， 所以上面的判断就可以变得很优雅：
 ````c
 if (!(Z_TYPE_FLAGS(zv) & IS_TYPE_REFCOUNTED)) {
 }
@@ -380,7 +382,8 @@ IS_TYPE_IMMUTABLE           //不可变的类型， 比如存在共享内存的�
 IS_TYPE_REFCOUNTED          //需要引用计数的类型
 IS_TYPE_COLLECTABLE         //可能包含循环引用的类型(IS_ARRAY, IS_OBJECT)
 IS_TYPE_COPYABLE            //可被复制的类型， 还记得我之前讲的对象和资源的例外么？ 对象和资源就不是
-IS_TYPE_SYMBOLTABLE         //zval保存的是一个符号表， 这个常量在我之前做了一个调整以后没用了， 但是还保留着兼容， 下个版本会去掉
+IS_TYPE_SYMBOLTABLE         //zval保存的是全局符号表， 这个在我之前做了一个调整以后没用了， 但还保留着兼容，
+                            //下个版本会去掉
 ````
 作用于字符串的有:
 ````c
