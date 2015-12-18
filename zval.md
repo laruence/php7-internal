@@ -30,13 +30,13 @@ struct _zval_struct {
 
 ````
 
-对PHP5内核有了解的同学应该对这个结构比较熟悉, 因为zval可以表示一切PHP中的数据类型, 所以它包含了一个type字段, 表示这个zval存储的是什么类型的值, 常见的可能选项是IS_NULL, IS_LONG, IS_STRING, IS_ARRAY, IS_OBJECT等等.
+对PHP5内核有了解的同学应该对这个结构比较熟悉, 因为zval可以表示一切PHP中的数据类型, 所以它包含了一个type字段, 表示这个zval存储的是什么类型的值, 常见的可能选项是`IS_NULL`, `IS_LONG`, `IS_STRING`, `IS_ARRAY`, `IS_OBJECT`等等.
 
-根据type字段的值不同, 我们就要用不同的方式解读value的值, 这个value是个联合体, 比如对于type是IS_STRING, 那么我们应该用value.str来解读zval.value字段, 而如果type是IS_LONG, 那么我们就要用value.lval来解读.
+根据type字段的值不同, 我们就要用不同的方式解读value的值, 这个value是个联合体, 比如对于type是`IS_STRING`, 那么我们应该用`value.str`来解读`zval.value`字段, 而如果type是`IS_LONG`, 那么我们就要用`value.lval`来解读.
 
-另外, 我们知道PHP是用引用计数来做基本的垃圾回收的, 所以zval中有一个refcount__gc字段, 表示这个zval的引用数目, 但这里有一个要说明的, 在5.3以前, 这个字段的名字还叫做refcount, 5.3以后, 在引入新的垃圾回收算法来对付循环引用计数的时候, 作者加入了大量的宏来操作refcount, 为了能让错误更快的显现, 所以改名为refcount__gc, 迫使大家都使用宏来操作refcount.
+另外, 我们知道PHP是用引用计数来做基本的垃圾回收的, 所以zval中有一个`refcount__gc`字段, 表示这个zval的引用数目, 但这里有一个要说明的, 在5.3以前, 这个字段的名字还叫做`refcount`, 5.3以后, 在引入新的垃圾回收算法来对付循环引用计数的时候, 作者加入了大量的宏来操作`refcount`, 为了能让错误更快的显现, 所以改名为`refcount__gc`, 迫使大家都使用宏来操作`refcount`.
 
-类似的, 还有is_ref, 这个值表示了PHP中的一个类型是否是引用, 这里我们可以看到是不是引用是一个标志位.
+类似的, 还有`is_ref`, 这个值表示了PHP中的一个类型是否是引用, 这里我们可以看到是不是引用是一个标志位.
 
 这就是PHP5时代的zval, 在2013年我们做PHP5的opcache JIT的时候, 因为JIT在实际项目中表现不佳, 我们转而意识到这个结构体的很多问题. 而PHPNG项目就是从改写这个结构体而开始的.
 
@@ -44,7 +44,7 @@ struct _zval_struct {
 
 PHP5的zval定义是随着Zend Engine 2诞生的, 随着时间的推移, 当时设计的局限性也越来越明显:
 
-首先这个结构体的大小是(在64位系统)24个字节, 我们仔细看这个zval.value联合体, 其中zend_object_value是最大的长板, 它导致整个value需要16个字节, 这个应该是很容易可以优化掉的, 比如把它挪出来, 用个指针代替,因为毕竟IS_OBJECT也不是最最常用的类型.
+首先这个结构体的大小是(在64位系统)24个字节, 我们仔细看这个`zval.value`联合体, 其中`zend_object_value`是最大的长板, 它导致整个value需要16个字节, 这个应该是很容易可以优化掉的, 比如把它挪出来, 用个指针代替,因为毕竟`IS_OBJECT`也不是最最常用的类型.
 
 第二, 这个结构体的每一个字段都有明确的含义定义, 没有预留任何的自定义字段, 导致在PHP5时代做很多的优化的时候, 需要存储一些和zval相关的信息的时候, 不得不采用其他结构体映射, 或者外部包装后打补丁的方式来扩充zval, 比如5.3的时候新引入专门解决循环引用的GC, 它不得采用如下的比较hack的做法:
 ````c
@@ -57,7 +57,7 @@ PHP5的zval定义是随着Zend Engine 2诞生的, 随着时间的推移, 当时�
     } while (0)
 ````
 
-它用zval_gc_info劫持了zval的分配:
+它用`zval_gc_info`劫持了zval的分配:
 ````c
 typedef struct _zval_gc_info {
     zval z;
@@ -68,7 +68,7 @@ typedef struct _zval_gc_info {
 } zval_gc_info;
 ````
 
-然后用zval_gc_info来扩充了zval, 所以实际上来说我们在PHP5时代申请一个zval其实真正的是分配了32个字节, 但其实GC只需要关心IS_ARRAY和IS_OBJECT类型, 这样就导致了大量的内存浪费.
+然后用`zval_gc_info`来扩充了zval, 所以实际上来说我们在PHP5时代申请一个zval其实真正的是分配了32个字节, 但其实GC只需要关心`IS_ARRAY和IS_OBJECT`类型, 这样就导致了大量的内存浪费.
 
 还比如我之前做的Taint扩展, 我需要对于给一些字符串存储一些标记, zval里没有任何地方可以使用, 所以我不得不采用非常手段: 
 ````c
@@ -101,7 +101,9 @@ typedef struct _zend_object_store_bucket {
 
 除了上面提到的两套引用以外, 如果我们要获取一个object, 则我们需要通过如下方式:
 
+````c
 EG(objects_store).object_buckets[Z_OBJ_HANDLE_P(z)].bucket.obj
+````
 
 经过漫长的多次内存读取, 才能获取到真正的objec对象本身. 效率可想而知.
 
@@ -160,14 +162,14 @@ Used 4.2051479816437S
 ````
 相差1万倍之多. 这就造成, 如果在一大段代码中, 我不小心把一个变量变成了引用(比如foreach as &$v), 那么就有可能触发到这个问题, 造成严重的性能问题, 然而却又很难排查.
 
-第六, 也是最重要的一个, 为什么说它重要呢? 因为这点促成了很大的性能提升, 我们习惯了在PHP5的时代调用MAKE_STD_ZVAL在堆内存上分配一个zval, 然后对他进行操作, 最后呢通过RETURN_ZVAL把这个zval的值"copy"给return_value, 然后又销毁了这个zval, 比如pathinfo这个函数:
+第六, 也是最重要的一个, 为什么说它重要呢? 因为这点促成了很大的性能提升, 我们习惯了在PHP5的时代调用`MAKE_STD_ZVAL`在堆内存上分配一个zval, 然后对他进行操作, 最后呢通过`RETURN_ZVAL`把这个zval的值"copy"给`return_value`, 然后又销毁了这个zval, 比如`pathinfo`这个函数:
 ````c
 PHP_FUNCTION(pathinfo)
 {
 .....
 	MAKE_STD_ZVAL(tmp);
 	array_init(tmp);
-....
+.....
 
     if (opt == PHP_PATHINFO_ALL) {
         RETURN_ZVAL(tmp, 0, 1);
@@ -176,7 +178,7 @@ PHP_FUNCTION(pathinfo)
 }
 ````
 
-这个tmp变量, 完全是一个临时变量的作用, 我们又何必在堆内存分配它呢? MAKE_STD_ZVAL/ALLOC_ZVAL在PHP5的时候, 到处都有, 是一个非常常见的用法, 如果我们能把这个变量用栈分配, 那无论是内存分配, 还是缓存友好, 都是非常有利的
+这个tmp变量, 完全是一个临时变量的作用, 我们又何必在堆内存分配它呢? `MAKE_STD_ZVAL/ALLOC_ZVAL`在PHP5的时候, 到处都有, 是一个非常常见的用法, 如果我们能把这个变量用栈分配, 那无论是内存分配, 还是缓存友好, 都是非常有利的
 
 还有很多, 我就不一一详细列举了, 但是我相信你们也有了和我们当时一样的想法, zval必须得改改了, 对吧? 
 
@@ -227,12 +229,12 @@ struct _zval_struct {
 };
 ````
 
-虽然看起来变得好大, 但其实你仔细看, 全部都是联合体, 这个新的zval在64位环境下,现在只需要16个字节(2个指针size), 它主要分为俩个部分, value和扩充字段, 而扩充字段又分为u1和u2俩个部分, 其中u1是type info,  u2是各种辅助字段.
+虽然看起来变得好大, 但其实你仔细看, 全部都是联合体, 这个新的zval在64位环境下,现在只需要16个字节(2个指针size), 它主要分为俩个部分, `value`和扩充字段, 而扩充字段又分为`u1`和`u2`俩个部分, 其中`u1`是type info,  `u2`是各种辅助字段.
 
 
-其中value部分, 是一个size_t大小(一个指针大小), 可以保存一个指针, 或者一个long, 或者一个double.
+其中`value`部分, 是一个`size_t`大小(一个指针大小), 可以保存一个指针, 或者一个`long`, 或者一个`double`.
 
-而type info部分则保存了这个zval的类型. 扩充辅助字段则会在多个其他地方使用, 比如next, 就用在取代Hashtable中原来的拉链指针, 这部分会在以后介绍HashTable的时候再来详解.
+而type info部分则保存了这个zval的类型. 扩充辅助字段则会在多个其他地方使用, 比如`next`, 就用在取代Hashtable中原来的拉链指针, 这部分会在以后介绍HashTable的时候再来详解.
 
 
 #####类型
@@ -265,11 +267,11 @@ PHP7中的zval的类型做了比较大的调整, 总体来说有如下17种类�
 #define IS_PTR                      17
 ````
 
-其中PHP5的时候的IS_BOOL类型, 现在拆分成了IS_FALSE和IS_TRUE俩种类型. 而原来的引用是一个标志位, 现在的引用是一种新的类型.
+其中PHP5的时候的`IS_BOOL`类型, 现在拆分成了`IS_FALSE`和`IS_TRUE`俩种类型. 而原来的引用是一个标志位, 现在的引用是一种新的类型.
 
-对于IS_INDIRECT和IS_PTR来说, 这俩个类型是用在内部的保留类型, 用户不会感知到, 这部分会在后续介绍HashTable的时候也一并介绍.
+对于`IS_INDIRECT`和`IS_PTR`来说, 这俩个类型是用在内部的保留类型, 用户不会感知到, 这部分会在后续介绍HashTable的时候也一并介绍.
 
-从PHP7开始, 对于在zval的value字段中能保存下的值, 就不再对他们进行引用计数了, 而是在拷贝的时候直接赋值, 这样就省掉了大量的引用计数相关的操作, 这部分类型有:
+从PHP7开始, 对于在zval的`value`字段中能保存下的值, 就不再对他们进行引用计数了, 而是在拷贝的时候直接赋值, 这样就省掉了大量的引用计数相关的操作, 这部分类型有:
 ````
 IS_LONG
 IS_DOUBLE
@@ -281,7 +283,7 @@ IS_FALSE
 IS_TRUE
 ````
 
-而对于复杂类型, 一个size_t保存不下的, 那么我们就用value来保存一个指针, 这个指针指向这个具体的值, 引用计数也随之作用于这个值上, 而不在是作用于zval上了. 以IS_ARRAY为例:
+而对于复杂类型, 一个`size_t`保存不下的, 那么我们就用`value`来保存一个指针, 这个指针指向这个具体的值, 引用计数也随之作用于这个值上, 而不在是作用于zval上了. 以`IS_ARRAY`为例:
 
 ````c
 struct _zend_array {
@@ -307,7 +309,7 @@ struct _zend_array {
 };
 ````
 
-zval.value.arr将指向上面的这样的一个结构体, 由它实际保存一个数组, 引用计数部分保存在zend_refcounted_h结构中:
+`zval.value.arr`将指向上面的这样的一个结构体, 由它实际保存一个数组, 引用计数部分保存在`zend_refcounted_h`结构中:
 ````c
 typedef struct _zend_refcounted_h {
     uint32_t         refcount;          /* reference counter 32-bit */
@@ -323,9 +325,9 @@ typedef struct _zend_refcounted_h {
 } zend_refcounted_h;
 ````
 
-所有的复杂类型的定义, 开始的时候都是zend_refcounted_h结构, 这个结构里除了引用计数以外, 还有GC相关的结构. 从而在做GC回收的时候, GC不需要关心具体类型是什么, 所有的它都可以当做zend_refcounted*结构来处理.
+所有的复杂类型的定义, 开始的时候都是`zend_refcounted_h`结构, 这个结构里除了引用计数以外, 还有GC相关的结构. 从而在做GC回收的时候, GC不需要关心具体类型是什么, 所有的它都可以当做`zend_refcounted*`结构来处理.
 
-另外有一个需要说明的就是大家可能会好奇的ZEND_ENDIAN_LOHI_4宏, 这个宏的作用是简化赋值, 它会保证在大端或者小端的机器上, 它定义的字段都按照一样顺序排列存储, 从而我们在赋值的时候, 不需要对它的字段分别赋值, 而是可以统一赋值, 比如对于上面的array结构为例, 就可以通过:
+另外有一个需要说明的就是大家可能会好奇的`ZEND_ENDIAN_LOHI_4`宏, 这个宏的作用是简化赋值, 它会保证在大端或者小端的机器上, 它定义的字段都按照一样顺序排列存储, 从而我们在赋值的时候, 不需要对它的字段分别赋值, 而是可以统一赋值, 比如对于上面的array结构为例, 就可以通过:
 ````c
 arr1.u.flags = arr2.u.flags;
 ````
@@ -343,7 +345,7 @@ arr1.u.v.reserve 			= arr2.u.v.reserve;
 
 除了数据类型以外， 以前的经验也告诉我们， 一个数据除了它的类型以外， 还应该有很多其他的属性， 比如对于INTERNED STRING，它是一种在整个PHP请求期都存在的字符串(比如你写在代码中的字面量), 它不会被引用计数回收. 在5.4的版本中我们是通过预先申请一块内存， 然后再这个内存中分配字符串， 最后用指针地址来比较， 如果一个字符串是属于INTERNED STRING的内存范围内， 就认为它是INTERNED STRING. 这样做的缺点显而易见， 就是当内存不够的时候， 我们就没有办法分配INTERNED STRING了， 另外也非常丑陋， 所以如果一个字符串能有一些属性定义则这个实现就可以变得很优雅.
 
-还有， 比如现在我们对于IS_LONG, IS_TRUE等类型不再进行引用计数了， 那么当我们拿到一个zval的时候如何判断它需要不需要引用计数呢？ 想当然的我们可能会说用:
+还有， 比如现在我们对于`IS_LONG`, `IS_TRUE`等类型不再进行引用计数了， 那么当我们拿到一个zval的时候如何判断它需要不需要引用计数呢？ 想当然的我们可能会说用:
 ````c
 if (Z_TYPE_P(zv) >= IS_STRING) {
   //需要引用计数
@@ -367,13 +369,13 @@ if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))
 ````
 你是不是也觉得这简直太丑陋了， 简直不能忍受这样墨迹的代码， 对吧？
 
-是的，我们早想到了，回头看之前的zval定义， 注意到type_flags了么? 我们引入了一个标志位， 叫做IS_TYPE_REFCOUNTED, 它会保存在zval.u1.v.type_flags中， 我们对于需要引用计数的类型就赋予这个标志， 所以上面的判断就可以变得很优雅：
+是的，我们早想到了，回头看之前的zval定义， 注意到`type_flags`了么? 我们引入了一个标志位， 叫做`IS_TYPE_REFCOUNTED`, 它会保存在`zval.u1.v.type_flags`中， 我们对于需要引用计数的类型就赋予这个标志， 所以上面的判断就可以变得很优雅：
 ````c
 if (!(Z_TYPE_FLAGS(zv) & IS_TYPE_REFCOUNTED)) {
 }
 ````
 
-而对于INTERNED STRING来说， 这个IS_STR_INTERNED标志位应该是作用于字符串本身而不是zval的.
+而对于INTERNED STRING来说， 这个`IS_STR_INTERNED`标志位应该是作用于字符串本身而不是zval的.
  
 那么类似这样的标志位一共有多少呢？作用于zval的有：
 ````c
@@ -405,7 +407,7 @@ IS_OBJ_FREE_CALLED          //清理函数已经调用
 IS_OBJ_USE_GUARDS           //魔术方法递归保护
 IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
 ````
-有了这些预留的标志位， 我们就会很方便的做一些以前不好做的事情， 就比如我自己的taint扩展， 现在把一个字符串标记为污染的字符串就会变得无比简单：
+有了这些预留的标志位， 我们就会很方便的做一些以前不好做的事情， 就比如我自己的Taint扩展， 现在把一个字符串标记为污染的字符串就会变得无比简单：
 ````c
 /* it's important that make sure 
  * this value is not used by Zend or
