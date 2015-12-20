@@ -283,7 +283,11 @@ IS_FALSE
 IS_TRUE
 ````
 
-而对于复杂类型, 一个`size_t`保存不下的, 那么我们就用`value`来保存一个指针, 这个指针指向这个具体的值, 引用计数也随之作用于这个值上, 而不在是作用于zval上了. 以`IS_ARRAY`为例:
+而对于复杂类型, 一个`size_t`保存不下的, 那么我们就用`value`来保存一个指针, 这个指针指向这个具体的值, 引用计数也随之作用于这个值上, 而不在是作用于zval上了.
+
+![zval示意图](img/zval.png zval)
+
+以`IS_ARRAY`为例:
 
 ````c
 struct _zend_array {
