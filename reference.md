@@ -31,7 +31,7 @@ swtich (Z_TYPE_P(zv)) {
  
  一句话来说, 就是我们不得不这么做. -_#
  
- 前面说到, Hashtable直接存储的是zval, 这样在符号表中, 俩个zval如何共用一个数值呢? 对于字符串什么的还好, 我们貌似可以在`zend_refcounted`结构中加入一个标志位来表明是引用来解决, 但是我们知道在PHP7中, 一些类型是直接存储在zval中的, 比如`IS_LONG`, 但是引用类型是需要引用计数的, 那么对于一个是`IS_LONG`并且又是`IS_REFERNCE`的zval该如何表示呢?
+ 前面说到, Hashtable直接存储的是zval, 这样在符号表中, 俩个zval如何共用一个数值呢? 对于字符串等复杂类型来说还好, 我们貌似可以在`zend_refcounted`结构中加入一个标志位来表明是引用来解决, 然而这个也会遇到Change On Write带来的复制, 但是我们知道在PHP7中, 一些类型是直接存储在zval中的, 比如`IS_LONG`, 但是引用类型是需要引用计数的, 那么对于一个是`IS_LONG`并且又是`IS_REFERNCE`的zval该如何表示呢?
  
  为此, 我们创造了这个新的类型:
  
