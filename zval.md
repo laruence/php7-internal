@@ -421,4 +421,86 @@ IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
 ````
 这个标记就会一直随着这个字符串的生存而存在的， 省掉了我之前的很多tricky的做法.
 
-到现在我们基本上把zval的变化概况介绍完毕, 接下来我们会来看看新类型`IS_REFERENCE`, 从而看看PHP5的时候的那个经典问题如何被解决.
+####ZVAL预先分配
+ 前面我们说过, PHP5的zval分配采用的是堆上分配内存, 也就是在PHP预案代码中随处可见的MAKE_STD_ZVAL和ALLOC_ZVAL宏. 我们也知道了本来一个zval只需要24个字节, 但是算上gc_info, 其实分配了32个字节, 再加上PHP自己的内存管理在分配内存的时候都会在内存前面保留一部分信息:
+````c
+typedef struct _zend_mm_block {
+    zend_mm_block_info info;
+#if ZEND_DEBUG
+    unsigned int magic;
+# ifdef ZTS
+    THREAD_T thread_id;
+# endif
+    zend_mm_debug_info debug;
+#elif ZEND_MM_HEAP_PROTECTION
+    zend_mm_debug_info debug;
+#endif
+} zend_mm_block;
+````
+
+  从而导致实际上我们只需要24字节的内存, 但最后竟然分配48个字节之多.
+
+
+  然而大部分的zval, 尤其是扩展函数内的zval, 我们想想它接受的参数来自外部的zval, 它把返回值返回给return_value, 这个也是来自外部的zval, 而中间变量的zval完全可以采用栈上分配. 也就是说大部分的内部函数都不需要在堆上分配内存, 它需要的zval都可以来自外部.
+
+  于是当时我们做了一个大胆的想法, 所有的zval都不需要单独申请. 
+
+  而这个也很容易证明, PHP脚本中使用的zval, 要么存在于符号表, 要么就以临时变量(`IS_TMP_VAR`)或者编译变量(`IS_CV`)的形式存在. 前者存在于一个Hashtable中, 而在PHP7中Hashtable默认保存的就是zval, 这部分的zval完全可以在Hashtable分配的时候一次性分配出来, 后面的存在于execute_data之后, 数量也在编译时刻确定好了, 也可以随着execute_data一次性分配, 所以我们确实不再需要单独在堆上申请zval了.
+
+  所以, 在PHP7开始, 我们移除了MAKE_STD_ZVAL/ALLOC_ZVAL宏, 不再支持存堆内存上申请zval. 函数内部使用的zval要么来自外面输入, 要么使用在栈上分配的临时zval.
+
+  在后来的实践中, 总结出来的可能对于开发者来说最大的变化就是, 之前的一些内部函数, 通过一些操作获得一些信息, 然后分配一个zval, 返回给调用者的情况:
+````c
+static zval * php_internal_function() {
+    .....
+    str = external_function();
+ 
+    MAKE_STD_ZVAL(zv);
+
+    ZVAL_STRING(zv, str, 0);
+
+	return zv;
+}
+PHP_FUNCTION(test) {
+	RETURN_ZVAL(php_internal_function(), 1, 1);
+}
+````
+
+  要么修改为, 这个zval由调用者传递:
+
+````c
+static void php_internal_function(zval *zv) {
+    .....
+    str = external_function();
+ 
+    ZVAL_STRING(zv, str);
+	efree(str);
+}
+
+PHP_FUNCTION(test) {
+	php_internal_function(return_value);
+}
+````
+
+   要么修改为, 这个函数返回原始素材:
+````c 
+static char * php_internal_function() {
+    .....
+    str = external_function();
+	return str;
+}
+
+PHP_FUNCTION(test) {
+	str = php_internal_function();
+	RETURN_STRING(str);
+	efree(str);
+}
+````
+
+####总结 
+
+  (这块还没想好怎么说, 本来我是要引出Hashtable不再存在zval**, 从而引出引用类型的存在的必要性, 但是如果不先讲Hashtable的结构, 这个引出貌似很突兀, 先这么着吧, 以后再来修改)
+
+  到现在我们基本上把zval的变化概况介绍完毕, 抽象的来说, 其实在PHP7中的zval, 已经变成了一个值指针, 它要么保存着原始值, 要么保存着指向一个保存原始值的指针. 也就是说现在的zval相当于PHP5的时候的zval *. 只不过相比于zval *, 直接存储zval, 我们可以省掉一次指针解引用, 从而提高缓存友好性.
+
+  其实PHP7的性能, 我们并没有引入什么新的技术模式, 不过就是主要来自, 持续不懈的降低内存占用, 提高缓存友好性, 降低执行的指令数的这些原则而来的, 可以说PHP7的重构就是这三个原则.

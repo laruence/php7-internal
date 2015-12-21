@@ -6,11 +6,10 @@
 ````
 
 ####REFERENCE
-   上一站章说过引用(REFERENCE)在PHP5的时候是一个标志位, 而在PHP7以后我们把它变成了一种新的类型:`IS_REFERNCE`, 然而引用在PHP中还是比较常用的, 所以在一些事情的处理上, 这个变化会让内核开发者, 扩展开发者产生不少的疑惑.
+   上一站章说过引用(REFERENCE)在PHP5的时候是一个标志位, 而在PHP7以后我们把它变成了一种新的类型:`IS_REFERNCE`. 然而引用是一种很场景的应用, 所以这个变化带来了很多的变化, 也给我们在做PHP7开发的时候, 因为有的时候疏忽忘了处理这个类型, 而带来不少的bug.
 
    最简单的情况, 就是在处理各种类型的时候, 从此以后我们要多考虑这种新的类型, 比如在PHP7中, 这样的代码形式就变得很常见了:
 ````c
-
 try_again:
 swtich (Z_TYPE_P(zv)) {
 	case IS_TRING:
@@ -24,12 +23,23 @@ swtich (Z_TYPE_P(zv)) {
 	break;	
 }
 ````
-   
-    除了这些, 还有不少变化, 要了解这些我们需要认真完全的理解下这个新的引用类型.
+
+	如果大家自己写的扩展, 如果忘了考虑这种新的类型, 那么就会导致问题.
+
+####为什么?
+	那么既然这种新类型会带来这么多问题, 那么当时为什么要用把引用变成一种类型呢? 为什么不还是使用一个标志位呢?
+
+    一句话来说, 就是我们不得不这么做. -_#
+
+    前面说到, Hashtable直接存储的是zval, 这样在符号表中, 俩个zval如何共用一个数值呢? 对于字符串什么的还好, 我们貌似可以在`zend_refcounted`结构中加入一个标志位来表明是引用来解决, 但是我们知道在PHP7中, 一些类型是直接存储在zval中的, 比如`IS_LONG`, 但是引用类型是需要引用计数的, 那么对于一个是`IS_LONG`并且又是`IS_REFERNCE`的zval该如何表示呢?
+
+    为此, 我们创造了这个新的类型:
 
 ![IS_REFERNCE](/img/reference.png)
 	
-	如图所示, 引用是一种需要引用计数的类型:`zend_reference`, 所以`zval.value.ref`是一个指向`zend_reference`的指针, 它包含了引用计数, 和一个zval, 所以具体的zval的值是存在`zval.value.ref->val`中的.
+	如图所示, 引用是一种新的类型:`zend_reference`, 对于`IS_REFERNCE`类型的zval, `zval.value.ref`是一个指向`zend_reference`的指针, 它包含了引用计数和一个zval, 具体的zval的值是存在`zval.value.ref->val`中的.
+
+    所以对于`IS_LONG`的引用来说, 就用一个类型是`IS_REFERNCE`的zval, 它指向一个`zend_reference`, 而这个`zend_reference->val`中是一个类型为`IS_LONG`的zval.
 
 ####Change On Write
 	PHP采用引用计数来做简单的垃圾回收, 考虑如下的代码:
@@ -54,5 +64,7 @@ Used 0.00020173048281
 ````
  
     可见确实没有发生复制, 从而不会产生任何的性能问题.
+
+####
 
 待续....
