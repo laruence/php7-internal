@@ -54,7 +54,7 @@ swtich (Z_TYPE_P(zv)) {
  
  而在PHP7中, 情况就变得简单了很多, 首先在引用赋值给`$ref`(line 2)的时候, 生成一个`IS_REFERNCE`类型, 然后因为此时有俩个变量引用它所以`zend_reference`这个结构的引用计数`zval.value.ref->gc.refcount`为2.
  
- 再随后的赋值给`$copy`(line 3)的时候, 发现`$val`是一个引用, 于是让$copy指向的是`zval.value.ref->val`, 也就是字符串值为`laruence`的zval, 然后把的的引用计数+1, 也就是`zval.value.ref->val.value.str.gc.refcount`为2. 并没有产生复制.
+ 再随后的赋值给`$copy`(line 3)的时候, 发现`$val`是一个引用, 于是让`$copy`指向的是`zval.value.ref->val`, 也就是字符串值为`laruence`的zval, 然后把zval的引用计数+1, 也就是`zval.value.ref->val.value.str.gc.refcount`为2. 并没有产生复制.
  
  从而这就很好的解决了上一章所说的PHP5的那个经典的问题, 比如我们在PHP7下运行上一章的那个问题, 我们得到的结果是:
 ````
