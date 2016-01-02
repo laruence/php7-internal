@@ -17,7 +17,7 @@ swtich (Z_TYPE_P(zv)) {
 	case IS_ARRAY:
 	break;
     ...
-	case IS_REFERNCE:
+	case IS_REFERENCE:
 	zv = Z_REFVAL_P(zv); //解引用
 	goto try_again;
 	break;	
