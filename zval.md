@@ -422,15 +422,15 @@ IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
 这个标记就会一直随着这个字符串的生存而存在的， 省掉了我之前的很多tricky的做法.
 
 ####ZVAL预先分配
- 前面我们说过, PHP5的zval分配采用的是堆上分配内存, 也就是在PHP预案代码中随处可见的MAKE_STD_ZVAL和ALLOC_ZVAL宏. 我们也知道了本来一个zval只需要24个字节, 但是算上gc_info, 其实分配了32个字节, 再加上PHP自己的内存管理在分配内存的时候都会在内存前面保留一部分信息:
+ 前面我们说过, PHP5的zval分配采用的是堆上分配内存, 也就是在PHP源代码中随处可见的MAKE_STD_ZVAL和ALLOC_ZVAL宏. 我们也知道了本来一个zval只需要24个字节, 但是算上gc_info, 其实分配了32个字节, 再加上PHP自己的内存管理在分配内存的时候都会在内存前面保留一部分信息:
 ````c
 typedef struct _zend_mm_block {
     zend_mm_block_info info;
 #if ZEND_DEBUG
     unsigned int magic;
-# ifdef ZTS
+#ifdef ZTS
     THREAD_T thread_id;
-# endif
+#endif
     zend_mm_debug_info debug;
 #elif ZEND_MM_HEAP_PROTECTION
     zend_mm_debug_info debug;
@@ -447,7 +447,7 @@ typedef struct _zend_mm_block {
 
   而这个也很容易证明, PHP脚本中使用的zval, 要么存在于符号表, 要么就以临时变量(`IS_TMP_VAR`)或者编译变量(`IS_CV`)的形式存在. 前者存在于一个Hashtable中, 而在PHP7中Hashtable默认保存的就是zval, 这部分的zval完全可以在Hashtable分配的时候一次性分配出来, 后面的存在于execute_data之后, 数量也在编译时刻确定好了, 也可以随着execute_data一次性分配, 所以我们确实不再需要单独在堆上申请zval了.
 
-  所以, 在PHP7开始, 我们移除了MAKE_STD_ZVAL/ALLOC_ZVAL宏, 不再支持存堆内存上申请zval. 函数内部使用的zval要么来自外面输入, 要么使用在栈上分配的临时zval.
+  所以, 在PHP7开始, 我们移除了MAKE_STD_ZVAL/ALLOC_ZVAL宏, 不再支持从堆内存上申请zval. 函数内部使用的zval要么来自外面输入, 要么使用在栈上分配的临时zval.
 
   在后来的实践中, 总结出来的可能对于开发者来说最大的变化就是, 之前的一些内部函数, 通过一些操作获得一些信息, 然后分配一个zval, 返回给调用者的情况:
 ````c
