@@ -1,14 +1,14 @@
-###深入理解PHP7之zval
+### 深入理解PHP7之zval
 
 PHP7已经发布, 如承诺, 我也要开始这个系列的文章的编写, 今天我想先和大家聊聊zval的变化. 在讲zval变化的之前我们先来看看zval在PHP5下面是什么样子
 
-#####版权申明:
+##### 版权申明:
 ````
 本文是原创作品，包括文字、资料、图片、网页格式，转载时请标注作者与来源。非经允许，不得用于赢利目的。
 ````
 
-####PHP5
-#####zval回顾
+#### PHP5
+##### zval回顾
 在PHP5的时候, zval的定义如下:
 ````c
 struct _zval_struct {
@@ -40,7 +40,7 @@ struct _zval_struct {
 
 这就是PHP5时代的zval, 在2013年我们做PHP5的opcache JIT的时候, 因为JIT在实际项目中表现不佳, 我们转而意识到这个结构体的很多问题. 而PHPNG项目就是从改写这个结构体而开始的.
 
-#####存在的问题
+##### 存在的问题
 
 PHP5的zval定义是随着Zend Engine 2诞生的, 随着时间的推移, 当时设计的局限性也越来越明显:
 
@@ -70,7 +70,7 @@ typedef struct _zval_gc_info {
 
 然后用`zval_gc_info`来扩充了zval, 所以实际上来说我们在PHP5时代申请一个zval其实真正的是分配了32个字节, 但其实GC只需要关心`IS_ARRAY和IS_OBJECT`类型, 这样就导致了大量的内存浪费.
 
-还比如我之前做的Taint扩展, 我需要对于给一些字符串存储一些标记, zval里没有任何地方可以使用, 所以我不得不采用非常手段: 
+还比如我之前做的Taint扩展, 我需要对于给一些字符串存储一些标记, zval里没有任何地方可以使用, 所以我不得不采用非常手段:
 ````c
 Z_STRVAL_PP(ppzval) = erealloc(Z_STRVAL_PP(ppzval), Z_STRLEN_PP(ppzval) + 1 + PHP_TAINT_MAGIC_LENGTH);
 PHP_TAINT_MARK(*ppzval, PHP_TAINT_MAGIC_POSSIBLE);
@@ -180,11 +180,11 @@ PHP_FUNCTION(pathinfo)
 
 这个tmp变量, 完全是一个临时变量的作用, 我们又何必在堆内存分配它呢? `MAKE_STD_ZVAL/ALLOC_ZVAL`在PHP5的时候, 到处都有, 是一个非常常见的用法, 如果我们能把这个变量用栈分配, 那无论是内存分配, 还是缓存友好, 都是非常有利的
 
-还有很多, 我就不一一详细列举了, 但是我相信你们也有了和我们当时一样的想法, zval必须得改改了, 对吧? 
+还有很多, 我就不一一详细列举了, 但是我相信你们也有了和我们当时一样的想法, zval必须得改改了, 对吧?
 
-####PHP7
+#### PHP7
 
-#####现在的zval
+##### 现在的zval
 到了PHP7中, zval变成了如下的结构, 要说明的是, 这个是现在的结构, 已经和PHPNG时候有了一些不同了, 因为我们新增加了一些解释 (联合体的字段), 但是总体大小, 结构, 是和PHPNG的时候一致的:
 ````c
 struct _zval_struct {
@@ -237,7 +237,7 @@ struct _zval_struct {
 而type info部分则保存了这个zval的类型. 扩充辅助字段则会在多个其他地方使用, 比如`next`, 就用在取代Hashtable中原来的拉链指针, 这部分会在以后介绍HashTable的时候再来详解.
 
 
-#####类型
+##### 类型
 
 PHP7中的zval的类型做了比较大的调整, 总体来说有如下17种类型:
 ````c
@@ -345,7 +345,7 @@ arr1.u.v.reserve 			= arr2.u.v.reserve;
 
 还有一个大家可能会问到的问题是, 为什么不把type类型放到zval类型的前面, 因为我们知道当我们去用一个zval的时候, 首先第一点肯定是先去获取它的类型. 这里的一个原因是, 一个是俩者差别不大, 另外就是考虑到如果以后JIT的话, zval的类型如果能够通过类型推导获得, 就根本没有必要去读取它的type值了.
 
-#####标志位
+##### 标志位
 
 除了数据类型以外， 以前的经验也告诉我们， 一个数据除了它的类型以外， 还应该有很多其他的属性， 比如对于INTERNED STRING，它是一种在整个PHP请求期都存在的字符串(比如你写在代码中的字面量), 它不会被引用计数回收. 在5.4的版本中我们是通过预先申请一块内存， 然后再这个内存中分配字符串， 最后用指针地址来比较， 如果一个字符串是属于INTERNED STRING的内存范围内， 就认为它是INTERNED STRING. 这样做的缺点显而易见， 就是当内存不够的时候， 我们就没有办法分配INTERNED STRING了， 另外也非常丑陋， 所以如果一个字符串能有一些属性定义则这个实现就可以变得很优雅.
 
@@ -363,7 +363,7 @@ if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))) {
 }
 ````
 
-是不是已经让你感觉到有点不对劲了? 嗯，别急， 还有呢， 我们还在5.6的时候引入了常量数组， 这个数组呢会存储在Opcache的共享内存中， 它也不需要引用计数：  
+是不是已经让你感觉到有点不对劲了? 嗯，别急， 还有呢， 我们还在5.6的时候引入了常量数组， 这个数组呢会存储在Opcache的共享内存中， 它也不需要引用计数：
 
 ````c
 if (Z_TYPE_P(zv) >= IS_STRING && !IS_INTERNED(Z_STR_P(zv))
@@ -380,7 +380,7 @@ if (!(Z_TYPE_FLAGS(zv) & IS_TYPE_REFCOUNTED)) {
 ````
 
 而对于INTERNED STRING来说， 这个`IS_STR_INTERNED`标志位应该是作用于字符串本身而不是zval的.
- 
+
 那么类似这样的标志位一共有多少呢？作用于zval的有：
 ````c
 IS_TYPE_CONSTANT            //是常量类型
@@ -413,7 +413,7 @@ IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
 ````
 有了这些预留的标志位， 我们就会很方便的做一些以前不好做的事情， 就比如我自己的Taint扩展， 现在把一个字符串标记为污染的字符串就会变得无比简单：
 ````c
-/* it's important that make sure 
+/* it's important that make sure
  * this value is not used by Zend or
  * any other extension agianst string */
 #define IS_STR_TAINT_POSSIBLE    (1<<7)
@@ -421,7 +421,7 @@ IS_OBJ_HAS_GUARDS           //是否有魔术方法递归保护标志
 ````
 这个标记就会一直随着这个字符串的生存而存在的， 省掉了我之前的很多tricky的做法.
 
-####ZVAL预先分配
+#### ZVAL预先分配
  前面我们说过, PHP5的zval分配采用的是堆上分配内存, 也就是在PHP预案代码中随处可见的MAKE_STD_ZVAL和ALLOC_ZVAL宏. 我们也知道了本来一个zval只需要24个字节, 但是算上gc_info, 其实分配了32个字节, 再加上PHP自己的内存管理在分配内存的时候都会在内存前面保留一部分信息:
 ````c
 typedef struct _zend_mm_block {
@@ -443,7 +443,7 @@ typedef struct _zend_mm_block {
 
   然而大部分的zval, 尤其是扩展函数内的zval, 我们想想它接受的参数来自外部的zval, 它把返回值返回给return_value, 这个也是来自外部的zval, 而中间变量的zval完全可以采用栈上分配. 也就是说大部分的内部函数都不需要在堆上分配内存, 它需要的zval都可以来自外部.
 
-  于是当时我们做了一个大胆的想法, 所有的zval都不需要单独申请. 
+  于是当时我们做了一个大胆的想法, 所有的zval都不需要单独申请.
 
   而这个也很容易证明, PHP脚本中使用的zval, 要么存在于符号表, 要么就以临时变量(`IS_TMP_VAR`)或者编译变量(`IS_CV`)的形式存在. 前者存在于一个Hashtable中, 而在PHP7中Hashtable默认保存的就是zval, 这部分的zval完全可以在Hashtable分配的时候一次性分配出来, 后面的存在于execute_data之后, 数量也在编译时刻确定好了, 也可以随着execute_data一次性分配, 所以我们确实不再需要单独在堆上申请zval了.
 
@@ -454,7 +454,7 @@ typedef struct _zend_mm_block {
 static zval * php_internal_function() {
     .....
     str = external_function();
- 
+
     MAKE_STD_ZVAL(zv);
 
     ZVAL_STRING(zv, str, 0);
@@ -472,7 +472,7 @@ PHP_FUNCTION(test) {
 static void php_internal_function(zval *zv) {
     .....
     str = external_function();
- 
+
     ZVAL_STRING(zv, str);
 	efree(str);
 }
@@ -483,7 +483,7 @@ PHP_FUNCTION(test) {
 ````
 
    要么修改为, 这个函数返回原始素材:
-````c 
+````c
 static char * php_internal_function() {
     .....
     str = external_function();
@@ -497,7 +497,7 @@ PHP_FUNCTION(test) {
 }
 ````
 
-####总结 
+#### 总结
 
   (这块还没想好怎么说, 本来我是要引出Hashtable不再存在zval**, 从而引出引用类型的存在的必要性, 但是如果不先讲Hashtable的结构, 这个引出貌似很突兀, 先这么着吧, 以后再来修改)
 
