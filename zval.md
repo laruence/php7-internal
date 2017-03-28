@@ -148,7 +148,7 @@ $b = &$array; //注意这里, 假设我不小心把这个Array引用给了一个
 $i = 0;
 $start = microtime(true);
 while($i++ < 100) {
-    dummy($array);
+    dummy($b);
 }
 printf("Used %sS\n", microtime(true) - $start);
 ?>
